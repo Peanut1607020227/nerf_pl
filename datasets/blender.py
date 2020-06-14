@@ -31,8 +31,8 @@ class BlenderDataset(Dataset):
         self.focal *= self.img_wh[0]/800 # modify focal length to match size self.img_wh
 
         # bounds, common for all scenes
-        self.near = 2.0
-        self.far = 6.0
+        self.near = 1.5
+        self.far = 7.0
         self.bounds = np.array([self.near, self.far])
         
         # ray directions for all pixels, same for all images (same H, W, focal)
@@ -44,6 +44,10 @@ class BlenderDataset(Dataset):
             self.poses = []
             self.all_rays = []
             self.all_rgbs = []
+            preload = False
+            if os.path.exists(os.path.join(self.root_dir,'rays_%d_%d.pth'%self.img_wh)):
+                preload = True
+
             for frame in self.meta['frames']:
                 pose = np.array(frame['transform_matrix'])[:3, :4]
                 self.poses += [pose]
@@ -51,22 +55,30 @@ class BlenderDataset(Dataset):
 
                 image_path = os.path.join(self.root_dir, f"{frame['file_path']}.png")
                 self.image_paths += [image_path]
-                img = Image.open(image_path)
-                img = img.resize(self.img_wh, Image.LANCZOS)
-                img = self.transform(img) # (4, h, w)
-                img = img.view(4, -1).permute(1, 0) # (h*w, 4) RGBA
-                img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-                self.all_rgbs += [img]
-                
-                rays_o, rays_d = get_rays(self.directions, c2w) # both (h*w, 3)
+                if not preload:
+                    img = Image.open(image_path)
+                    img = img.resize(self.img_wh, Image.LANCZOS)
+                    img = self.transform(img) # (4, h, w)
+                    img = img.view(4, -1).permute(1, 0) # (h*w, 4) RGBA
+                    img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
+                    self.all_rgbs += [img]
+                    
+                    rays_o, rays_d = get_rays(self.directions, c2w) # both (h*w, 3)
 
-                self.all_rays += [torch.cat([rays_o, rays_d, 
-                                             self.near*torch.ones_like(rays_o[:, :1]),
-                                             self.far*torch.ones_like(rays_o[:, :1])],
-                                             1)] # (h*w, 8)
+                    self.all_rays += [torch.cat([rays_o, rays_d, 
+                                                self.near*torch.ones_like(rays_o[:, :1]),
+                                                self.far*torch.ones_like(rays_o[:, :1])],
+                                                1)] # (h*w, 8)
+            if not preload:
+                self.all_rays = torch.cat(self.all_rays, 0) # (len(self.meta['frames])*h*w, 3)
+                self.all_rgbs = torch.cat(self.all_rgbs, 0) # (len(self.meta['frames])*h*w, 3)
+                data = {'rays':self.all_rays, 'rgbs':self.all_rgbs}
+                torch.save(data,os.path.join(self.root_dir,'rays_%d_%d.pth'%self.img_wh))
+            else:
+                data = torch.load(os.path.join(self.root_dir,'rays_%d_%d.pth'%self.img_wh))
+                self.all_rays = data['rays']
+                self.all_rgbs = data['rgbs']
 
-            self.all_rays = torch.cat(self.all_rays, 0) # (len(self.meta['frames])*h*w, 3)
-            self.all_rgbs = torch.cat(self.all_rgbs, 0) # (len(self.meta['frames])*h*w, 3)
 
     def define_transforms(self):
         self.transform = T.ToTensor()

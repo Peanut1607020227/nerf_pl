@@ -77,6 +77,9 @@ class NeRFSystem(LightningModule):
         if self.hparams.dataset_name == 'llff':
             kwargs['spheric_poses'] = self.hparams.spheric_poses
             kwargs['val_num'] = self.hparams.num_gpus
+        if self.hparams.dataset_name == 'NHR':
+            kwargs['focal'] = self.hparams.focal
+            
         self.train_dataset = dataset(split='train', **kwargs)
         self.val_dataset = dataset(split='val', **kwargs)
 
@@ -117,6 +120,9 @@ class NeRFSystem(LightningModule):
                }
 
     def validation_step(self, batch, batch_nb):
+
+        tmp = self.hparams.perturb
+        self.hparams.perturb = 0
         rays, rgbs = self.decode_batch(batch)
         rays = rays.squeeze() # (H*W, 3)
         rgbs = rgbs.squeeze() # (H*W, 3)
@@ -136,7 +142,7 @@ class NeRFSystem(LightningModule):
 
         psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
         log['val_psnr'] = psnr_
-
+        self.hparams.perturb = tmp
         return log
 
     def validation_epoch_end(self, outputs):
