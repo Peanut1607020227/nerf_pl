@@ -87,7 +87,11 @@ class IBRDynamicDataset(torch.utils.data.Dataset):
         sum_tmp = 0
         for i in range(frame_num):
             #tmp = np.loadtxt(os.path.join(data_folder_path,'pointclouds/frame%d.obj' % (i+1)), usecols = (1,2,3,4,5,6))
-            tmp = np.load(os.path.join(data_folder_path,'pointclouds/frame%d.npy' % (i+1)))
+            if os.path.exists(os.path.join(data_folder_path,'pointclouds/frame%d.npy' % (i+1))):
+                tmp = np.load(os.path.join(data_folder_path,'pointclouds/frame%d.npy' % (i+1)))
+            else:
+                tmp = np.loadtxt(os.path.join(data_folder_path,'pointclouds/frame%d.xzy' % (i+1)))
+                tmp = np.concatenate([tmp,np.zeros(tmp.shape)],axis = 1)
 
             if os.path.exists(os.path.join(self.holes,'holes/frame%d.npy' % (i+1))):
                 tmp2 = np.load(os.path.join(self.holes,'holes/frame%d.npy' % (i+1)))

@@ -17,7 +17,7 @@ class BlenderDataset(Dataset):
         self.define_transforms()
 
         self.read_meta()
-        self.white_back = True
+        self.white_back = False
 
     def read_meta(self):
         with open(os.path.join(self.root_dir,
@@ -52,8 +52,12 @@ class BlenderDataset(Dataset):
                 pose = np.array(frame['transform_matrix'])[:3, :4]
                 self.poses += [pose]
                 c2w = torch.FloatTensor(pose)
+                fn = frame['file_path']
+                if fn[0]=='.':
+                    fn = fn[2:]
+                    fn = fn + '.0001'
 
-                image_path = os.path.join(self.root_dir, f"{frame['file_path']}.png")
+                image_path = os.path.join(self.root_dir, f"{fn}.png")
                 self.image_paths += [image_path]
                 if not preload:
                     img = Image.open(image_path)
@@ -99,7 +103,12 @@ class BlenderDataset(Dataset):
             frame = self.meta['frames'][idx]
             c2w = torch.FloatTensor(frame['transform_matrix'])[:3, :4]
 
-            img = Image.open(os.path.join(self.root_dir, f"{frame['file_path']}.png"))
+            fn = frame['file_path']
+            if fn[0]=='.':
+                fn = fn[2:]
+                fn = fn + '.0001'
+
+            img = Image.open(os.path.join(self.root_dir, f"{fn}.png"))
             img = img.resize(self.img_wh, Image.LANCZOS)
             img = self.transform(img) # (4, H, W)
             valid_mask = (img[-1]>0).flatten() # (H*W) valid color area

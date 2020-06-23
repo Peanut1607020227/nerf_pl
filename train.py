@@ -77,7 +77,10 @@ class NeRFSystem(LightningModule):
         if self.hparams.dataset_name == 'llff':
             kwargs['spheric_poses'] = self.hparams.spheric_poses
             kwargs['val_num'] = self.hparams.num_gpus
-        if self.hparams.dataset_name == 'NHR':
+        if self.hparams.dataset_name == 'nhr':
+            kwargs['focal'] = self.hparams.focal
+
+        if self.hparams.dataset_name == 'nopc':
             kwargs['focal'] = self.hparams.focal
             
         self.train_dataset = dataset(split='train', **kwargs)
@@ -114,6 +117,7 @@ class NeRFSystem(LightningModule):
             psnr_ = psnr(results[f'rgb_{typ}'], rgbs)
             log['train/psnr'] = psnr_
 
+
         return {'loss': loss,
                 'progress_bar': {'train_psnr': psnr_},
                 'log': log
@@ -130,19 +134,33 @@ class NeRFSystem(LightningModule):
         log = {'val_loss': self.loss(results, rgbs)}
         typ = 'fine' if 'rgb_fine' in results else 'coarse'
     
-        if batch_nb == 0:
+        if batch_nb == 1:
             W, H = self.hparams.img_wh
+
+            typ = 'coarse'
+            acc = results[f'opacity_{typ}'].view(H, W).cpu().unsqueeze(0).repeat(3,1,1)
             img = results[f'rgb_{typ}'].view(H, W, 3).cpu()
             img = img.permute(2, 0, 1) # (3, H, W)
             img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu() # (3, H, W)
             depth = visualize_depth(results[f'depth_{typ}'].view(H, W)) # (3, H, W)
-            stack = torch.stack([img_gt, img, depth]) # (3, 3, H, W)
-            self.logger.experiment.add_images('val/GT_pred_depth',
+            stack = torch.stack([img_gt, img, depth,acc]) # (3, 3, H, W)
+            self.logger.experiment.add_images(f'val/GT_pred_depth_{typ}',
+                                               stack, self.global_step)
+            typ = 'fine'
+            acc = results[f'opacity_{typ}'].view(H, W).cpu().unsqueeze(0).repeat(3,1,1)
+            img = results[f'rgb_{typ}'].view(H, W, 3).cpu()
+            img = img.permute(2, 0, 1) # (3, H, W)
+            img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu() # (3, H, W)
+            depth = visualize_depth(results[f'depth_{typ}'].view(H, W)) # (3, H, W)
+            stack = torch.stack([img_gt, img, depth,acc]) # (3, 3, H, W)
+            self.logger.experiment.add_images(f'val/GT_pred_depth_{typ}',
                                                stack, self.global_step)
 
+
+        log['val_psnr_coarse'] = psnr(results['rgb_coarse'], rgbs)
         log['val_psnr'] = psnr(results[f'rgb_{typ}'], rgbs)
         self.hparams.perturb = tmp
-        
+
         return log
 
     def validation_epoch_end(self, outputs):
@@ -158,6 +176,8 @@ class NeRFSystem(LightningModule):
 
 if __name__ == '__main__':
     hparams = get_opts()
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(hparams.gpu)
+    #torch.cuda.set_device(hparams.gpu)
     system = NeRFSystem(hparams)
     checkpoint_callback = ModelCheckpoint(filepath=os.path.join(f'ckpts/{hparams.exp_name}',
                                                                 '{epoch:d}'),
@@ -179,10 +199,14 @@ if __name__ == '__main__':
                       early_stop_callback=None,
                       weights_summary=None,
                       progress_bar_refresh_rate=1,
-                      gpus=hparams.num_gpus,
-                      distributed_backend='ddp' if hparams.num_gpus>1 else None,
+                      single_gpu = True,
+                      gpus='0',
+                      #distributed_backend='dp' if len(hparams.gpus)>1 else None,
                       num_sanity_val_steps=1,
+                      val_check_interval=1000,
+                      val_percent_check = 0.3,
                       benchmark=True,
-                      profiler=hparams.num_gpus==1)
+                      profiler=True
+                      )
 
     trainer.fit(system)

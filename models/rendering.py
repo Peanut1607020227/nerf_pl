@@ -38,6 +38,7 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
     else:
         u = torch.rand(N_rays, N_importance, device=bins.device)
     u = u.contiguous()
+    cdf = cdf.contiguous()
 
     inds = searchsorted(cdf, u, side='right')
     below = torch.clamp_min(inds-1, 0)
@@ -63,7 +64,7 @@ def render_rays(models,
                 perturb=0,
                 noise_std=1,
                 N_importance=0,
-                chunk=1024*32,
+                chunk=1024*16,
                 white_back=False,
                 test_time=False
                 ):
@@ -217,7 +218,7 @@ def render_rays(models,
                       dir_embedded, z_vals, weights_only=False)
         result = {'rgb_coarse': rgb_coarse,
                   'depth_coarse': depth_coarse,
-                  'opacity_coarse': weights_coarse.sum(1)
+                  'opacity_coarse': weights_coarse[:,:-1].sum(1)
                  }
 
     if N_importance > 0: # sample points for fine model
@@ -240,6 +241,6 @@ def render_rays(models,
 
         result['rgb_fine'] = rgb_fine
         result['depth_fine'] = depth_fine
-        result['opacity_fine'] = weights_fine.sum(1)
+        result['opacity_fine'] = weights_fine[:,:-1].sum(1)
 
     return result
